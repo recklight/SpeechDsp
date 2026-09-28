@@ -16,11 +16,19 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
+    # Windows runner 預設用 PowerShell：不支援 heredoc，多行指令也只看最後一行的結束碼。
+    # 統一用 bash（set -eo pipefail），任何一行失敗整個步驟就失敗。
+    defaults:
+      run:
+        shell: bash
+    # Windows runner 的系統編碼是 cp1252，Python 輸出中文會 UnicodeEncodeError
+    env:
+      PYTHONUTF8: "1"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -66,9 +74,9 @@ jobs:
     permissions:
       id-token: write  # trusted publishing，不需要在 secrets 放 API token
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
