@@ -1,0 +1,40 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Data and experiment artefacts (never commit corpora or model files)
+data/
+*.wav
+*.mat
+*.mfc
+*.dat
+*.bin
+*.npy
+*.npz
+*.xlsx
+*.csv
+outputs/
+checkpoints/

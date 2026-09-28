@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: 安裝專案
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: 檢查 Python 3.10 語法相容性
+        run: |
+          python - <<'EOF'
+          import ast, pathlib, sys
+          bad = []
+          for f in pathlib.Path(".").rglob("*.py"):
+              if any(p in f.parts for p in (".venv", "build", "dist", "__pycache__")):
+                  continue
+              try:
+                  ast.parse(f.read_text(encoding="utf-8"), filename=str(f), feature_version=(3, 10))
+              except SyntaxError as e:
+                  bad.append(f"{f}: {e.msg}")
+          if bad:
+              print("\n".join(bad))
+              sys.exit(1)
+          print("所有檔案皆相容於 Python 3.10")
+          EOF
+
+      - name: Ruff
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Pytest
+        run: pytest -q
+
+  publish:
+    # 推送 v* tag 且所有測試通過時，打包並上傳到 PyPI
+    name: 發佈到 PyPI
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # trusted publishing，不需要在 secrets 放 API token
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 確認 tag 與套件版本一致
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [ "$tag" != "$version" ]; then
+            echo "tag v$tag 與 pyproject.toml 的版本 $version 不一致"
+            exit 1
+          fi
+
+      - name: 打包
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          twine check --strict dist/*
+
+      - name: 上傳到 PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
