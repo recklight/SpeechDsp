@@ -44,10 +44,17 @@ from .features import (
 from .framing import enframe, frame_time, frame_to_sample, num_frames, overlap_add
 from .io import read_htk, read_wav, write_htk, write_wav
 from .metrics import confusion_report, cross_val_report, sensitivity_specificity, uar
-from .spectral import istft, power_spectrum, spectrogram_db, spectrogram_image, stft
+from .spectral import (
+    istft,
+    power_spectrum,
+    power_to_db,
+    spectrogram_db,
+    spectrogram_image,
+    stft,
+)
 from .vad import endpoint_detect, frame_energy, trim_silence, zero_crossing_rate
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __author__ = "RL"
 
 __all__ = [
@@ -73,6 +80,7 @@ __all__ = [
     "num_frames",
     "overlap_add",
     "power_spectrum",
+    "power_to_db",
     "preemphasis",
     "read_htk",
     "read_wav",

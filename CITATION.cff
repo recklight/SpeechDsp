@@ -5,8 +5,8 @@ abstract: "Digital signal processing, speech feature extraction and evaluation t
 type: software
 authors:
   - name: "RL"
-version: "0.1.0"
-date-released: "2026-09-28"
+version: "0.2.0"
+date-released: "2026-10-08"
 license: MIT
 repository-code: "https://github.com/recklight/SpeechDsp"
 keywords:

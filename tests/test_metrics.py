@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import balanced_accuracy_score
 
 from speechdsp.metrics import confusion_report, cross_val_report, sensitivity_specificity, uar
 
@@ -36,6 +39,39 @@ def test_uar_is_not_fooled_by_class_imbalance():
 def test_uar_rejects_mismatched_lengths():
     with pytest.raises(ValueError, match="same length"):
         uar([0, 1], [0, 1, 1])
+
+
+def test_uar_does_not_average_in_a_class_that_was_only_predicted():
+    # recall(0) = 1/2, recall(1) = 1; class 2 never occurs in y_true.
+    assert uar([0, 0, 1, 1], [0, 2, 1, 1]) == pytest.approx(0.75)
+
+
+def test_uar_of_a_single_class_fold_is_its_recall():
+    assert uar([1, 1, 1, 1], [1, 1, 0, 2]) == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_uar_matches_balanced_accuracy(seed):
+    rng = np.random.default_rng(seed)
+    y_true = rng.integers(0, 3, size=60)
+    y_pred = rng.integers(0, 4, size=60)  # class 3 is predicted but never true
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)  # sklearn flags the extra class
+        expected = balanced_accuracy_score(y_true, y_pred)
+    assert uar(y_true, y_pred) == pytest.approx(expected)
+
+
+def test_confusion_report_uar_agrees_with_uar():
+    rep = confusion_report([0, 0, 1, 1], [0, 2, 1, 1])
+    assert rep["uar"] == pytest.approx(uar([0, 0, 1, 1], [0, 2, 1, 1]))
+    assert rep["labels"] == [0, 1, 2]
+    assert rep["per_class_recall"][2] == 0.0
+
+
+@pytest.mark.filterwarnings("ignore:A single label was found:UserWarning")
+def test_confusion_report_uar_is_nan_when_no_listed_label_keeps_a_true_sample():
+    # Restricting to label 1 drops every sample (all were predicted 0).
+    assert np.isnan(confusion_report([1, 1], [0, 0], labels=[1])["uar"])
 
 
 def test_sensitivity_specificity_matches_the_hand_computed_value():

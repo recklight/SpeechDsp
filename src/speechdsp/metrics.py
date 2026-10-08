@@ -61,14 +61,19 @@ def uar(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     Returns
     -------
     float
-        Mean recall over the classes present in ``y_true`` or ``y_pred``.  Also
-        known as balanced accuracy; equals accuracy when the classes are
-        balanced, and 0.5 for a two-class majority-only predictor.
+        Mean recall over the classes present in ``y_true``, the same definition
+        as :func:`sklearn.metrics.balanced_accuracy_score`.  It equals accuracy
+        when the classes are balanced and is 0.5 for a two-class majority-only
+        predictor.  A predicted label that never occurs in ``y_true`` has no
+        recall of its own: it only lowers the recall of the true class it
+        replaced, so a test fold that lacks a class is not penalised twice.
 
     Examples
     --------
     >>> uar([0, 0, 0, 1], [0, 0, 0, 0])
     0.5
+    >>> uar([0, 0, 1, 1], [0, 2, 1, 1])
+    0.75
 
     References
     ----------
@@ -80,8 +85,12 @@ def uar(y_true: np.ndarray, y_pred: np.ndarray) -> float:
         raise ValueError("y_true and y_pred must have the same length")
     if y_true.size == 0:
         raise ValueError("cannot compute UAR from empty label vectors")
+    # The confusion matrix must span every label that occurs: sklearn drops the
+    # samples whose true or predicted label is not listed, which would hide the
+    # very errors that a predicted-only class represents.
     labels = np.unique(np.concatenate([y_true, y_pred]))
-    return float(np.mean(_per_class_recall(y_true, y_pred, labels)))
+    recall = _per_class_recall(y_true, y_pred, labels)
+    return float(np.mean(recall[np.isin(labels, y_true)]))
 
 
 def sensitivity_specificity(
@@ -157,7 +166,12 @@ def confusion_report(
         true classes on the rows), ``support`` (per-class counts), ``accuracy``,
         ``uar``, ``macro_f1``, ``per_class_recall`` and ``per_class_precision``
         (label -> float), plus ``sensitivity`` and ``specificity`` which are
-        filled in only for two-class problems (``nan`` otherwise).
+        filled in only for two-class problems (``nan`` otherwise).  ``uar``
+        averages the recall of the labels that have true samples in the
+        matrix, exactly as :func:`uar` does; a label without true samples is
+        listed with recall 0 but left out of that mean (``nan`` if no listed
+        label keeps a true sample, which can only happen with explicit
+        ``labels`` because samples outside them are dropped).
 
     Examples
     --------
@@ -176,6 +190,8 @@ def confusion_report(
     )
     cm = confusion_matrix(y_true, y_pred, labels=label_arr)
     recall = _per_class_recall(y_true, y_pred, label_arr)
+    supported = cm.sum(axis=1) > 0
+    uar_value = float(np.mean(recall[supported])) if supported.any() else float("nan")
     precision = precision_score(y_true, y_pred, labels=label_arr, average=None, zero_division=0)
 
     if label_arr.size == 2:
@@ -189,7 +205,7 @@ def confusion_report(
         "confusion_matrix": cm,
         "support": cm.sum(axis=1),
         "accuracy": float(accuracy_score(y_true, y_pred)),
-        "uar": float(np.mean(recall)),
+        "uar": uar_value,
         "macro_f1": float(
             f1_score(y_true, y_pred, labels=label_arr, average="macro", zero_division=0)
         ),

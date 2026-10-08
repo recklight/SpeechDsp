@@ -15,6 +15,7 @@ PUBLIC_API = {
         "stft",
         "istft",
         "power_spectrum",
+        "power_to_db",
         "spectrogram_db",
         "spectrogram_image",
     ],
@@ -58,7 +59,7 @@ def test_the_top_level_package_re_exports_everything(name):
 
 
 def test_metadata():
-    assert speechdsp.__version__ == "0.1.0"
+    assert speechdsp.__version__ == "0.2.0"
     assert speechdsp.__author__ == "RL"
 
 

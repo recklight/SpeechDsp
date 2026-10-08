@@ -190,10 +190,24 @@ from speechdsp.spectral import stft, istft, spectrogram_db, spectrogram_image
 S = stft(x, n_fft=512, hop=128)            # (幀數, 257) 複數陣列
 y = istft(S, n_fft=512, hop=128)           # 完美重建，誤差 < 1e-10
 
+# 16 kHz 下 25 ms 音框（400 點）補零到 512 點 FFT
+S = stft(x, n_fft=512, hop=160, win_length=400)
+
 db = spectrogram_db(x, sr, n_fft=512, hop=160, top_db=80.0)   # 值域 -80 ~ 0 dB
 
 img = spectrogram_image(x, sr, shape=(40, 98))   # uint8 灰階圖，固定 40x98
 ```
+
+`win_length` 指定窗長（音框長度），必須介於 1 與 `n_fft` 之間。窗函數放在
+`n_fft` 點音框的正中央，其餘補零，等同於把加窗後的音框補零到 `n_fft` 點再做 FFT。
+不指定時窗長就是 `n_fft`。`stft`、`istft`、`power_spectrum`、`spectrogram_db`
+與 `spectrogram_image` 都接受這個參數；`istft` 要帶與分析時相同的值。
+
+分貝換算由 `power_to_db` 負責，下限是**相對於峰值**的：比峰值低超過 `top_db`
+的值一律截在 `-top_db`。所以錄音音量大小不影響結果，很小聲的錄音也保有完整的
+動態範圍。完全沒有能量的輸入（全零）沒有峰值可以參考，會得到全部 `-top_db`，
+`spectrogram_image` 則輸出全黑（0）的影像。訊號裡有 NaN 或 inf 時會直接引發
+`ValueError`，不會畫成一張看似靜音的圖。
 
 `spectrogram_image` 會把時間軸用線性內插重新取樣成固定寬度，無論語句長短都輸出
 同一個尺寸，可直接餵給 CNN。第 0 列是最低的 mel 頻帶，第 0 行是最早的一幀。
@@ -293,6 +307,12 @@ print(cv["mean"]["uar"], cv["std"]["uar"])
 print(cv["pooled"]["confusion_matrix"])
 ```
 
+`uar` 只對 `y_true` 中出現的類別取平均，定義與 scikit-learn 的
+`balanced_accuracy_score` 相同。如果模型預測出一個在 `y_true` 裡不存在的類別，
+這個錯誤只會降低被誤判那一類的召回率，不會讓那個不存在的類別以召回率 0
+再算進平均一次。這在某一折缺少某個類別時特別重要。`confusion_report` 的 `uar`
+採用同一個定義。
+
 `cross_val_report` 回傳的字典包含：
 
 | 鍵值 | 內容 |
@@ -335,11 +355,12 @@ print(cv["pooled"]["confusion_matrix"])
 
 | 函式 | 說明 |
 | --- | --- |
-| `stft(x, n_fft, hop, window='hann', center=True)` | 短時傅立葉轉換，回傳複數矩陣 |
-| `istft(S, n_fft, hop, window='hann', center=True)` | 反短時傅立葉轉換，可完美重建 |
-| `power_spectrum(x, n_fft, hop)` | 每幀的功率譜 |
-| `spectrogram_db(x, sr, n_fft, hop, top_db=80.0)` | 相對峰值的分貝頻譜圖 |
-| `spectrogram_image(x, sr, shape=(40, 98), n_fft=512, hop=None)` | 固定尺寸 uint8 灰階頻譜圖 |
+| `stft(x, n_fft, hop, window='hann', center=True, win_length=None)` | 短時傅立葉轉換，回傳複數矩陣 |
+| `istft(S, n_fft, hop, window='hann', center=True, win_length=None)` | 反短時傅立葉轉換，可完美重建 |
+| `power_spectrum(x, n_fft, hop, win_length=None)` | 每幀的功率譜 |
+| `power_to_db(power, top_db=80.0)` | 功率換成相對峰值的分貝，下限為相對值 |
+| `spectrogram_db(x, sr, n_fft, hop, top_db=80.0, win_length=None)` | 相對峰值的分貝頻譜圖 |
+| `spectrogram_image(x, sr, shape=(40, 98), n_fft=512, hop=None, win_length=None)` | 固定尺寸 uint8 灰階頻譜圖 |
 
 ### `speechdsp.features`
 
@@ -373,7 +394,7 @@ print(cv["pooled"]["confusion_matrix"])
 
 | 函式 | 說明 |
 | --- | --- |
-| `uar(y_true, y_pred)` | 各類別召回率的平均 |
+| `uar(y_true, y_pred)` | `y_true` 中各類別召回率的平均（同 balanced accuracy） |
 | `sensitivity_specificity(y_true, y_pred, pos_label=1)` | 敏感度與特異度 |
 | `confusion_report(y_true, y_pred, labels=None)` | 混淆矩陣與各項指標的字典 |
 | `cross_val_report(estimator, X, y, groups=None, n_splits=5, seed=0)` | 分層交叉驗證報告 |
@@ -418,7 +439,9 @@ CI 會在 Ubuntu 與 Windows 上，以 Python 3.10 至 3.13 執行上述檢查�
 測試涵蓋的數值驗證包括：
 
 - 已知頻率的正弦波，其 STFT 峰值落在正確的頻率 bin
-- `istft(stft(x))` 的重建誤差小於 `1e-10`（多種窗函數與 hop 組合）
+- `istft(stft(x))` 的重建誤差小於 `1e-10`（多種窗函數與 hop 組合，含窗長短於 `n_fft`）
+- 窗長短於 `n_fft` 的 STFT 與「加窗後補零再做 FFT」的振幅完全一致
+- 分貝頻譜圖與頻譜影像不受錄音音量影響；全零輸入得到 `-top_db` 與全黑影像
 - `enframe` / `overlap_add` 往返一致
 - mel 濾波器組的峰值增益、中心頻率單調遞增、全頻帶覆蓋
 - MFCC 對常數訊號、數位靜音、不同取樣率的行為
@@ -426,7 +449,8 @@ CI 會在 Ubuntu 與 Windows 上，以 Python 3.10 至 3.13 執行上述檢查�
 - HTK 檔案寫入再讀回完全一致，且表頭確實為大端序
 - `log_mmse` 與 `spectral_subtraction` 對加噪訊號能提升訊雜比
 - `endpoint_detect` 對「靜音－語音－靜音」合成訊號抓到正確邊界
-- `uar` 與 `sensitivity_specificity` 對照手算的小例子
+- `uar` 與 `sensitivity_specificity` 對照手算的小例子；`uar` 與 scikit-learn 的
+  `balanced_accuracy_score` 一致
 
 ### 相容性
 
