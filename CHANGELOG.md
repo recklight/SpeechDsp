@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- 英文版 README（`README.md`，GitHub 預設顯示），繁體中文版在 `README.zh-TW.md`。
+
 ---
 
 ## [0.2.0] - 2026-10-08
