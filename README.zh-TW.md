@@ -10,7 +10,7 @@
 > 語音訊號處理、特徵擷取與模型評估的共用工具箱
 
 `speechdsp` 是一套以 NumPy / SciPy / scikit-learn 為基礎、從零撰寫的 Python 套件，
-提供語音與聲學研究常用的前端處理流程：音檔與特徵檔讀寫、分幀、短時傅立葉轉換、
+提供語音與聲學研究常用的前端處理流程：音檔與特徵檔讀寫、分框、短時傅立葉轉換、
 MFCC 與差量特徵、端點偵測、語音增強，以及適合類別不平衡資料的評估指標。
 
 本套件刻意不依賴 `librosa`、`soundfile` 或任何深度學習框架，所有演算法都以
@@ -29,7 +29,7 @@ MFCC 與差量特徵、端點偵測、語音增強，以及適合類別不平衡
 2. [快速開始](#快速開始)
 3. [模組說明](#模組說明)
    - [speechdsp.io — 音檔與特徵檔存取](#speechdspio--音檔與特徵檔存取)
-   - [speechdsp.framing — 分幀與重疊相加](#speechdspframing--分幀與重疊相加)
+   - [speechdsp.framing — 分框與重疊相加](#speechdspframing--分框與重疊相加)
    - [speechdsp.spectral — 短時頻譜分析](#speechdspspectral--短時頻譜分析)
    - [speechdsp.features — 倒頻譜特徵](#speechdspfeatures--倒頻譜特徵)
    - [speechdsp.vad — 端點偵測](#speechdspvad--端點偵測)
@@ -122,7 +122,7 @@ feats = speechdsp.mfcc_with_deltas(x, sr, n_mfcc=13)
 # 倒頻譜平均變異數正規化
 feats = speechdsp.cmvn(feats)
 
-print(feats.shape)   # (幀數, 39)
+print(feats.shape)   # (音框數, 39)
 ```
 
 ---
@@ -153,28 +153,28 @@ HTK 二進位格式的表頭共 12 個位元組，全部使用**大端序（big-
 
 | 欄位 | 型別 | 說明 |
 | --- | --- | --- |
-| `nSamples` | int32 | 幀數 |
-| `sampPeriod` | int32 | 幀週期，單位 100 奈秒（10 ms 即 100000） |
-| `sampSize` | int16 | 每幀的位元組數（維度 × 4） |
+| `nSamples` | int32 | 音框數 |
+| `sampPeriod` | int32 | 音框週期，單位 100 奈秒（10 ms 即 100000） |
+| `sampSize` | int16 | 每個音框的位元組數（維度 × 4） |
 | `parmKind` | int16 | 特徵種類代碼，`6` 代表 MFCC |
 
 表頭之後是大端序的 `float32` 資料。部分工具會把特徵輸出成純文字的數值矩陣，
 `read_htk` 會自動偵測並改用文字模式解析，此時回傳的 `header['format']` 為
 `'text'`。
 
-### speechdsp.framing — 分幀與重疊相加
+### speechdsp.framing — 分框與重疊相加
 
-短時分析的共用基礎。全套件的分幀慣例都定在這裡：第 `t` 幀從第 `t * hop` 個取樣點
-開始、長度為 `frame_len`，尾端不足一幀的取樣點會被捨棄。
+短時分析的共用基礎。全套件的分框慣例都定在這裡：第 `t` 個音框從第 `t * hop` 個取樣點
+開始、長度為 `frame_len`，尾端不足一個音框的取樣點會被捨棄。
 
 ```python
 from speechdsp.framing import enframe, overlap_add, frame_to_sample, frame_time
 
-frames = enframe(x, frame_len=400, hop=160, window="hamming")  # (幀數, 400)
+frames = enframe(x, frame_len=400, hop=160, window="hamming")  # (音框數, 400)
 y = overlap_add(frames, hop=160)                                # 疊回一維訊號
 
-frame_to_sample(10, frame_len=400, hop=160)   # 1600，第 10 幀的起始取樣點
-frame_time(100, 400, 160, sr=16000)           # 每一幀的中心時間（秒）
+frame_to_sample(10, frame_len=400, hop=160)   # 1600，第 10 個音框的起始取樣點
+frame_time(100, 400, 160, sr=16000)           # 每一個音框的中心時間（秒）
 ```
 
 `enframe` 使用 `sliding_window_view` 建立跨步視圖後一次複製，不用 Python 迴圈，
@@ -189,7 +189,7 @@ STFT 與其反轉換。合成時會除以「窗函數平方的重疊相加包絡
 ```python
 from speechdsp.spectral import stft, istft, spectrogram_db, spectrogram_image
 
-S = stft(x, n_fft=512, hop=128)            # (幀數, 257) 複數陣列
+S = stft(x, n_fft=512, hop=128)            # (音框數, 257) 複數陣列
 y = istft(S, n_fft=512, hop=128)           # 完美重建，誤差 < 1e-10
 
 # 16 kHz 下 25 ms 音框（400 點）補零到 512 點 FFT
@@ -212,11 +212,11 @@ img = spectrogram_image(x, sr, shape=(40, 98))   # uint8 灰階圖，固定 40x9
 `ValueError`，不會畫成一張看似靜音的圖。
 
 `spectrogram_image` 會把時間軸用線性內插重新取樣成固定寬度，無論語句長短都輸出
-同一個尺寸，可直接餵給 CNN。第 0 列是最低的 mel 頻帶，第 0 行是最早的一幀。
+同一個尺寸，可直接餵給 CNN。第 0 列是最低的 mel 頻帶，第 0 行是最早的音框。
 
 ### speechdsp.features — 倒頻譜特徵
 
-MFCC 的完整流程：預強調 → 分幀加 Hamming 窗 → FFT 功率譜 → mel 三角濾波器組 →
+MFCC 的完整流程：預強調 → 分框加 Hamming 窗 → FFT 功率譜 → mel 三角濾波器組 →
 取對數 → DCT-II → 倒頻譜提升（liftering）。
 
 ```python
@@ -236,11 +236,11 @@ fb = mel_filterbank(sr, n_fft=512, n_mels=26)   # (26, 257)
 
 - **mel 轉換**使用標準公式 `m = 2595 * log10(1 + f / 700)`，三角濾波器的峰值
   正規化為 1.0（HTK 慣例），因此濾波器組輸出的能量與輸入功率譜同單位。
-- **`append_energy=True`** 時，第 0 維係數會換成該幀總能量的自然對數，這比 DCT 的
+- **`append_energy=True`** 時，第 0 維係數會換成該音框總能量的自然對數，這比 DCT 的
   直流項更穩定，也是多數 ASR 前端的預設作法。
-- **`n_fft` 自動調整**：若取樣率較高使得一幀的長度超過 `n_fft`（例如 44.1 kHz 的
-  25 ms 幀共 1102 點），會自動提升到下一個 2 的冪次並記錄一則警告，不會丟掉取樣點。
-- **`delta`** 使用標準迴歸式，分母為 `2 * sum(n^2)`，邊界以複製方式補幀。對一段
+- **`n_fft` 自動調整**：若取樣率較高使得一個音框的長度超過 `n_fft`（例如 44.1 kHz 的
+  25 ms 音框共 1102 點），會自動提升到下一個 2 的冪次並記錄一則警告，不會丟掉取樣點。
+- **`delta`** 使用標準迴歸式，分母為 `2 * sum(n^2)`，邊界以複製方式補音框。對一段
   線性斜坡輸入，內部區域會精確得到該斜率。
 
 ### speechdsp.vad — 端點偵測
@@ -256,8 +256,8 @@ speech = x[start:end]
 speech = trim_silence(x, sr)     # 等同於上面兩行
 ```
 
-演算法流程：先用開頭幾幀估計背景雜訊能量，再據此推出上門檻 `ITU` 與下門檻 `ITL`；
-掃描出第一個超過 `ITU` 的幀之後，往回退到最後一個高於 `ITL` 的幀，尾端同理。最後
+演算法流程：先用開頭幾個音框估計背景雜訊能量，再據此推出上門檻 `ITU` 與下門檻 `ITL`；
+掃描出第一個超過 `ITU` 的音框之後，往回退到最後一個高於 `ITL` 的音框，尾端同理。最後
 用過零率往外延伸，把能量偏低但過零率偏高的清擦音（例如 `/s/`、`/f/`）也納進來。
 
 門檻全部由訊號自己推得，所以偵測結果不受錄音音量絕對值影響。過零率的延伸步驟另外
@@ -265,7 +265,7 @@ speech = trim_silence(x, sr)     # 等同於上面兩行
 
 ### speechdsp.enhance — 語音增強
 
-兩種單通道頻域增強方法，都假設訊號開頭幾幀只有背景雜訊。
+兩種單通道頻域增強方法，都假設訊號開頭幾個音框只有背景雜訊。
 
 ```python
 from speechdsp.enhance import log_mmse, spectral_subtraction
@@ -283,7 +283,7 @@ y2 = spectral_subtraction(x, sr, noise_frames=6, over_sub=2.0, floor=0.002)
 
 兩者都保留原始相位，輸出長度與輸入相同。
 
-> **注意**：`noise_frames` 指的是開頭用來估計雜訊的幀數，這幾幀必須確實只有背景
+> **注意**：`noise_frames` 指的是開頭用來估計雜訊的音框數，這幾個音框必須確實只有背景
 > 雜訊。若音檔開頭沒有靜音段，請先自行補上，或改用其他雜訊估計方式。
 
 ### speechdsp.metrics — 評估指標
@@ -347,11 +347,11 @@ print(cv["pooled"]["confusion_matrix"])
 
 | 函式 | 說明 |
 | --- | --- |
-| `enframe(x, frame_len, hop, window=None)` | 分幀，回傳 `(幀數, frame_len)` |
+| `enframe(x, frame_len, hop, window=None)` | 分框，回傳 `(音框數, frame_len)` |
 | `overlap_add(frames, hop, window=None)` | 重疊相加，疊回一維訊號 |
-| `num_frames(n_samples, frame_len, hop)` | 依分幀慣例計算的幀數 |
-| `frame_to_sample(frame_idx, frame_len, hop)` | 幀索引 → 起始取樣點 |
-| `frame_time(n_frames, frame_len, hop, sr)` | 各幀的中心時間（秒） |
+| `num_frames(n_samples, frame_len, hop)` | 依分框慣例計算的音框數 |
+| `frame_to_sample(frame_idx, frame_len, hop)` | 音框索引 → 起始取樣點 |
+| `frame_time(n_frames, frame_len, hop, sr)` | 各音框的中心時間（秒） |
 
 ### `speechdsp.spectral`
 
@@ -359,7 +359,7 @@ print(cv["pooled"]["confusion_matrix"])
 | --- | --- |
 | `stft(x, n_fft, hop, window='hann', center=True, win_length=None)` | 短時傅立葉轉換，回傳複數矩陣 |
 | `istft(S, n_fft, hop, window='hann', center=True, win_length=None)` | 反短時傅立葉轉換，可完美重建 |
-| `power_spectrum(x, n_fft, hop, win_length=None)` | 每幀的功率譜 |
+| `power_spectrum(x, n_fft, hop, win_length=None)` | 每個音框的功率譜 |
 | `power_to_db(power, top_db=80.0)` | 功率換成相對峰值的分貝，下限為相對值 |
 | `spectrogram_db(x, sr, n_fft, hop, top_db=80.0, win_length=None)` | 相對峰值的分貝頻譜圖 |
 | `spectrogram_image(x, sr, shape=(40, 98), n_fft=512, hop=None, win_length=None)` | 固定尺寸 uint8 灰階頻譜圖 |
@@ -380,8 +380,8 @@ print(cv["pooled"]["confusion_matrix"])
 
 | 函式 | 說明 |
 | --- | --- |
-| `frame_energy(frames)` | 每幀的短時能量 |
-| `zero_crossing_rate(frames)` | 每幀的過零率（0 ~ 1） |
+| `frame_energy(frames)` | 每個音框的短時能量 |
+| `zero_crossing_rate(frames)` | 每個音框的過零率（0 ~ 1） |
 | `endpoint_detect(x, sr, frame_ms=25.0, hop_ms=10.0)` | 回傳 `(起始取樣點, 結束取樣點)` |
 | `trim_silence(x, sr, **kw)` | 直接切掉頭尾靜音 |
 
@@ -469,10 +469,10 @@ python -c "import ast,pathlib; [ast.parse(f.read_text(encoding='utf-8'), filenam
 ## 設計原則
 
 1. **向量化優先。** 能用 NumPy 廣播解決的就不寫 Python 迴圈。唯一保留迴圈的地方是
-   log-MMSE 的 decision-directed 遞迴（本質上必須逐幀進行），但即使如此，每一次
+   log-MMSE 的 decision-directed 遞迴（本質上必須逐框進行），但即使如此，每一次
    迭代仍然是對整個頻率軸一次算完。
-2. **慣例集中管理。** 分幀的定義只寫在 `speechdsp.framing` 一處，其他模組全部沿用，
-   避免不同模組對「第幾幀從哪裡開始」有不同解讀。
+2. **慣例集中管理。** 分框的定義只寫在 `speechdsp.framing` 一處，其他模組全部沿用，
+   避免不同模組對「第幾個音框從哪裡開始」有不同解讀。
 3. **明確的錯誤訊息。** 尺寸不合、參數超出範圍時直接丟出帶有實際數值的
    `ValueError`，不要讓錯誤在後面幾層才以奇怪的形式爆出來。
 4. **完整的型別註解與 numpy-style docstring。** 每個公開函式都標註了
